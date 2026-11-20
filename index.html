@@ -60,6 +60,7 @@ a{color:inherit}
 .lbl{display:flex;align-items:center;gap:8px;margin:20px 0 10px;font-size:13px;font-weight:700;color:#d7dbe4}
 .lbl em{font-style:normal;font-family:Oswald,sans-serif;color:var(--acc);font-size:12px;letter-spacing:.1em}
 .lbl .mini{margin-left:auto;font-size:11px;color:var(--sub);padding:4px 10px;border-radius:999px;border:1px solid var(--line2)}
+.keyhelp{margin-top:8px;font-size:12px;color:#c9cbd6}.keyhelp summary{cursor:pointer;color:#ffd166}.keyhelp ol{margin:6px 0 0 18px;padding:0;line-height:1.6}.keyhelp a{color:#8ec5ff}
 .svccount{font-size:12px;color:var(--mut,#9aa);margin:6px 2px 2px;line-height:1.5}.svccount b{color:#ffd166}.svccount small{opacity:.8}
 .svcs{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
 .svc{position:relative;min-height:46px;padding:10px 26px 10px 16px;text-align:left;font-weight:700;font-size:12.5px;color:var(--mut);background:rgba(28,32,44,.75);border:1px solid var(--line);border-radius:12px;transition:all .2s;overflow:hidden}
@@ -286,6 +287,12 @@ details p{margin:6px 0;line-height:1.6}
     <div class="note" id="posterNote" style="margin-top:8px;color:#9be7b0"></div>
     <div id="tmdbBox" class="hidden">
       <input type="password" id="tmdbKey" placeholder="TMDB APIキー または 読み取りアクセストークン">
+      <details class="keyhelp"><summary>キーの取り方（無料・5分）</summary><ol>
+        <li><a href="https://www.themoviedb.org/signup" target="_blank" rel="noopener">themoviedb.org</a> で無料登録し、メールを確認</li>
+        <li>右上のアイコン →「設定」→「API」を開く</li>
+        <li>「APIキーを申請」→ 種類は「Developer（個人利用）」、用途に「個人の映画検索アプリ」などと入力</li>
+        <li>表示された「APIリードアクセストークン」（eyJ…で始まる長い文字列）をコピーして、上の欄に貼る</li>
+      </ol></details>
       <div class="note" style="margin-top:6px">キーはこのブラウザにだけ保存されます。キーがあると、内蔵在庫の映画にも本物のポスターを付けます。Claude上で開いたページは外部通信が制限されるため、このHTMLを自分のPCやサーバーで開いたときに使えます。</div>
     </div>
     <button id="enter">入店する<span>→</span></button>
@@ -1051,9 +1058,14 @@ contactShadow(scene,ROOM.x0+0.2,RCZ,RD,0.6,Math.PI/2);contactShadow(scene,ROOM.x
 // --- レイアウト定数 ---
 const UNIT_X=[-5.5,-3.3,-1.1,1.1,3.3,5.5], UNIT_ZC=-2.3, UNIT_L=3.2, UNIT_Z0=UNIT_ZC-UNIT_L/2, UNIT_Z1=UNIT_ZC+UNIT_L/2;
 const AISLE_X=[-6.98,-4.4,-2.2,0,2.2,4.4,6.98], CROSS_Z=0.4, BACK_Z=-4.53;
-const ROW_Y=[0.78,1.38,0.18]; // 目線→上→下の順に陳列
+const ROW_Y=[0.78,1.38,0.18,1.98]; // 目線→上→下→最上段の順に陳列
 const CW=0.35, CH=0.49, CD=0.046, PS=0.05, PF=0.39, SHELF_D=0.38;
-const BACK_WALL_L=5.0, BACK_SHELF_X=-2.6, GOND_H=2.2;
+const BACK_WALL_L=5.0, BACK_SHELF_X=-2.6, GOND_H=2.62;
+// 左右の壁一面の棚（ゴンドラに入りきらない在庫を並べる）
+const WALL_FACES=[
+  {pos:new THREE.Vector3(-8+0.06,0,-3.0),rotY:Math.PI/2,len:5.0,label:'まだまだあります 邦画・アニメ・ドラマ',color:'#ffd84d',from:['jp','anime_s','anime_m','drama','romance','classic']},
+  {pos:new THREE.Vector3(8-0.06,0,-3.0),rotY:-Math.PI/2,len:5.0,label:'まだまだあります 洋画',color:'#6ee08a',from:['new','action','sf','horror','comedy','family']},
+];
 const TABLE={x:-5.4,z:2.4};
 const ADULT_FACES=[
   {k:'a_r18',pos:new THREE.Vector3(2.85,0,ADULT.z0+0.06),rotY:0,len:2.9},
@@ -1424,6 +1436,7 @@ UNIT_X.forEach(X=>addCollider(X-0.47,X+0.47,UNIT_Z0-0.05,UNIT_Z1+0.05));
 addCollider(COUNTER.x-COUNTER.w/2-0.06,ROOM.x1,COUNTER.z-COUNTER.l/2-0.06,COUNTER.z+COUNTER.l/2+0.06);
 addCollider(TABLE.x-1.02,TABLE.x+1.02,TABLE.z-0.42,TABLE.z+0.42); // 店長おすすめ台
 addCollider(4.62,5.18,4.27,4.83);   // 返却BOX
+addCollider(-8,-8+0.5,-5.55,-0.45);addCollider(8-0.5,8,-5.55,-0.45); // 壁の棚
 addCollider(BACK_SHELF_X-BACK_WALL_L/2-0.05,BACK_SHELF_X+BACK_WALL_L/2+0.05,ROOM.z0-0.2,ROOM.z0+0.46); // 返却棚
 
 /* ---------------------------------------------------------------------
@@ -1646,7 +1659,7 @@ function buildFace({pos,rotY,len,label,color,items,rows=3}){
     x.fillStyle='#fff';x.font='900 28px "Zen Kaku Gothic New",sans-serif';x.textBaseline='middle';x.fillText(label,24,h/2+1);
     const lw=x.measureText(label).width;x.fillStyle=color;x.font='500 18px Oswald,sans-serif';x.fillText((Object.values(AISLE).find(a=>a.n===label)||{e:''}).e||'',40+lw,h/2+2);});
   const tt=toTex(tc);const talk=plane(len,0.22,new THREE.MeshLambertMaterial({map:tt,emissive:'#fff',emissiveMap:tt,emissiveIntensity:0.3}));
-  talk.position.set(0,2.36,0.045);g.add(talk);
+  talk.position.set(0,rows>=4?2.76:2.36,0.045);g.add(talk);
   const layout=layoutFace(items,rows,len);
   const firstMesh=new Map();
   g.updateMatrixWorld(true);
@@ -1765,7 +1778,14 @@ function clearStore(){
 }
 function buildStore(data){
   clearStore();
-  FACE_DEFS.forEach((f,i)=>{const a=AISLES[i];buildFace({pos:f.pos,rotY:f.rotY,len:UNIT_L,label:a.n,color:a.c,items:data.byAisle[a.k]||[]});});
+  const overflow={};
+  FACE_DEFS.forEach((f,i)=>{const a=AISLES[i];const list=data.byAisle[a.k]||[];const face=buildFace({pos:f.pos,rotY:f.rotY,len:UNIT_L,label:a.n,color:a.c,items:list,rows:4});
+    overflow[a.k]=list.filter(it=>!face.firstMesh.has(it));});
+  // ゴンドラに並びきらなかった作品は壁の棚へ
+  for(const w of WALL_FACES){
+    const items=w.from.flatMap(k=>overflow[k]||[]).sort((a,b)=>itemPri(b)-itemPri(a));
+    if(items.length)buildFace({pos:w.pos,rotY:w.rotY,len:w.len,label:w.label,color:w.color,items,rows:4});
+  }
   buildFace({pos:new THREE.Vector3(BACK_SHELF_X,0,ROOM.z0+0.06),rotY:0,len:BACK_WALL_L,label:data.backLabel,color:'#ff8787',items:data.back});
   ADULT_FACES.forEach(f=>{const a=AISLE[f.k];const face=buildFace({pos:f.pos,rotY:f.rotY,len:f.len,label:a.n,color:a.c,items:(data.adultBy||{})[f.k]||[]});face.adult=true;});
   buildInstances();
@@ -1774,8 +1794,8 @@ function buildStore(data){
   const pool=S.items.filter(i=>!i.adult).sort((a,b)=>((b.poster?2:0)+(b.rankNew!=null?1:0))-((a.poster?2:0)+(a.rankNew!=null?1:0))||hashStr(a.key+'pp')-hashStr(b.key+'pp'));
   const pick=i=>pool[i%Math.max(1,pool.length)];
   if(pool.length){
-    [-4.4,-2.8,-1.2,0.4].forEach((z,i)=>posterMesh(pick(i),i%2?'push':'new',0.78,ROOM.x0+0.03,1.55,z,Math.PI/2));
-    [-4.4,-2.8].forEach((z,i)=>posterMesh(pick(4+i),i%2?'new':'push',0.78,ROOM.x1-0.03,1.55,z,-Math.PI/2));
+    [0.6,1.9,3.2].forEach((z,i)=>posterMesh(pick(i),i%2?'push':'new',0.78,ROOM.x0+0.03,1.55,z,Math.PI/2));
+    [0.4].forEach((z,i)=>posterMesh(pick(4+i),i%2?'new':'push',0.78,ROOM.x1-0.03,1.55,z,-Math.PI/2));
     posterMesh(pick(6),'new',0.7,-6.6,1.6,ROOM.z0+0.03,0);
     posterMesh(pick(7),'push',0.7,1.9,1.6,ROOM.z0+0.03,0);
     posterMesh(pick(8),'new',0.7,7.35,1.6,ROOM.z0+0.03,0);
@@ -1910,7 +1930,7 @@ function anilistItem(m,rank){
 }
 // iTunesのジャンル別ランキング（日本ストア）。邦画系を先に読むと邦画が「邦画」棚に入る
 const RSS_GENRES=[[4425,'jp'],[4426,'jp'],[4427,'jp'],[4402,'anime_m'],[4401,'action'],[4418,'action'],[4413,'sf'],[4408,'horror'],[4416,'horror'],[4404,'comedy'],[4412,'romance'],[4411,'romance'],[4410,'family'],[4403,'classic'],[4406,'drama'],[4407,'drama'],[4428,'drama'],[4431,'drama'],[4409,null],[4405,'drama']];
-const AISLE_CAP=150;
+const AISLE_CAP=320;
 async function pool(tasks,n){const out=new Array(tasks.length);let i=0;await Promise.all(Array.from({length:n},async()=>{while(i<tasks.length){const k=i++;out[k]=await tasks[k]();}}));return out;}
 // iTunesのRSSは配信サーバーのキャッシュ次第で「他サイトからの読み込み許可」が外れた応答が返ることがある。
 // 1時間ごとに変わる目印をURLに付けて許可付きの応答を受け取り、だめなら毎回違う目印で取り直す
@@ -1956,28 +1976,44 @@ async function tmdb(path,params={}){
 }
 function tmdbItem(r,type,aisle){
   return {key:`tmdb:${type}:${r.id}`,src:'tmdb',title:r.title||r.name||'(無題)',year:(r.release_date||r.first_air_date||'').slice(0,4),min:0,moods:[],
-    desc:(r.overview||'').slice(0,90),descLong:r.overview||'',aisle,services:[],tmdb:{type,id:r.id},
+    desc:(r.overview||'').slice(0,90),descLong:r.overview||'',aisle,services:[],tmdb:{type,id:r.id},anime:/^anime/.test(aisle),posterPath:r.poster_path||null,
     rating:typeof r.vote_average==='number'&&r.vote_count>0?r.vote_average:null,ratingSrc:'TMDB',
-    poster:r.poster_path?`https://image.tmdb.org/t/p/w500${r.poster_path}`:null,posterSmall:r.poster_path?`https://image.tmdb.org/t/p/w185${r.poster_path}`:null};
+    poster:r.poster_path?`https://image.tmdb.org/t/p/w500${r.poster_path}`:null,posterSmall:r.poster_path?`https://image.tmdb.org/t/p/w185${r.poster_path}`:null,posterTiny:r.poster_path?`https://image.tmdb.org/t/p/w92${r.poster_path}`:null};
 }
+// TMDB実データ：サービスごと×棚ごとに「日本で見放題配信中」の作品を取り、本物の配信先を付ける
+const TMDB_CAT_KEY='yv_tmdbcat_v1';
 async function loadTMDB(status){
+  const sig=[...S.selected].sort().join(',');
+  try{const c=JSON.parse(localStorage.getItem(TMDB_CAT_KEY)||'null');
+    if(c&&c.sig===sig&&Date.now()-c.t<24*3600e3&&c.items&&c.items.length){status(`TMDBの在庫を読み込み中…（${c.items.length}本）`);return {items:c.items.map(o=>({...tmdbItem(o,o.ty,o.ai),services:o.sv})),back:[]};}}catch{}
   status('配信サービスを確認中…');
   const [pm,pt]=await Promise.all([tmdb('/watch/providers/movie',{watch_region:'JP',language:'ja-JP'}),tmdb('/watch/providers/tv',{watch_region:'JP',language:'ja-JP'})]);
-  const all=[...pm.results,...pt.results];const ids=new Set();
-  for(const k of S.selected){const s=SVC[k];for(const p of all)if(s.re.test(p.provider_name))ids.add(p.provider_id);}
-  if(!ids.size)throw new Error('選んだサービスがTMDBに見つかりませんでした');
-  const seen=new Map(),items=[];
-  for(const a of AISLES){
-    status(`「${a.n}」の棚を補充中…`);
-    const ap=typeof a.p==='function'?a.p():a.p;
-    const base={watch_region:'JP',with_watch_providers:[...ids].join('|'),with_watch_monetization_types:'flatrate',language:'ja-JP',sort_by:'popularity.desc','vote_count.gte':'20',...ap};
-    const pages=await Promise.all([1,2,3].map(page=>tmdb('/discover/'+a.type,{...base,page}).catch(()=>({results:[]}))));
-    let n=0;
-    for(const r of pages.flatMap(p=>p.results)){const key=`tmdb:${a.type}:${r.id}`;if(seen.has(key))continue;const it=tmdbItem(r,a.type,a.k);seen.set(key,it);items.push(it);if(++n>=60)break;}
+  const all=[...pm.results,...pt.results];
+  const svcIds={};
+  for(const k of S.selected){const s=SVC[k];const ids=[...new Set(all.filter(p=>s.re.test(p.provider_name)).map(p=>p.provider_id))];if(ids.length)svcIds[k]=ids;}
+  if(!Object.keys(svcIds).length)throw new Error('選んだサービスがTMDBに見つかりませんでした');
+  const seen=new Map();
+  const PAGES={new:4,anime_s:8,anime_m:5,jp:8,classic:6};
+  const tasks=[];
+  for(const [k,ids] of Object.entries(svcIds))for(const a of AISLES){
+    tasks.push(async()=>{
+      const ap=typeof a.p==='function'?a.p():a.p;
+      const base={watch_region:'JP',with_watch_providers:ids.join('|'),with_watch_monetization_types:'flatrate',language:'ja-JP',sort_by:'popularity.desc','vote_count.gte':a.k==='new'?'0':'5',...ap};
+      const max=PAGES[a.k]||6;
+      for(let page=1;page<=max;page++){
+        let r;try{r=await tmdb('/discover/'+a.type,{...base,page});}catch{break;}
+        for(const x of r.results||[]){const key=`tmdb:${a.type}:${x.id}`;let it=seen.get(key);if(!it){it=tmdbItem(x,a.type,a.k);seen.set(key,it);}if(!it.services.includes(k))it.services.push(k);}
+        if(page>=(r.total_pages||1))break;
+      }
+      status(`TMDBから入荷中… ${seen.size}本`);
+    });
   }
+  await pool(tasks,8);
+  const items=[...seen.values()];
+  try{localStorage.setItem(TMDB_CAT_KEY,JSON.stringify({t:Date.now(),sig,items:items.map(it=>({id:it.tmdb.id,ty:it.tmdb.type,ai:it.aisle,sv:it.services,title:it.title,name:it.title,release_date:it.year?it.year+'-01-01':'',overview:(it.descLong||'').slice(0,60),vote_average:it.rating,vote_count:it.rating?1:0,poster_path:it.posterPath||null}))}));}catch{}
   status('話題作をチェック中…');
-  const tr=await tmdb('/trending/all/week',{language:'ja-JP'});
-  const back=tr.results.filter(r=>r.media_type==='movie'||r.media_type==='tv').slice(0,24).map(r=>seen.get(`tmdb:${r.media_type}:${r.id}`)||tmdbItem(r,r.media_type,'trend'));
+  let back=[];
+  try{const tr=await tmdb('/trending/all/week',{language:'ja-JP'});back=tr.results.filter(r=>r.media_type==='movie'||r.media_type==='tv').map(r=>seen.get(`tmdb:${r.media_type}:${r.id}`)).filter(Boolean).slice(0,24);}catch{}
   return {items,back};
 }
 async function loadDetails(item){
@@ -2016,7 +2052,8 @@ function setStock(state,n){
   const total=S.catalog.length,st=S.stats;
   if(S.source==='online'&&st){
     el.textContent=`入荷数：${total}本（映画 ${st.movies}・アニメ ${st.anime}${S.cached?'・前回の入荷分':''}）${S.failedFeeds?` ※${S.failedFeeds}ジャンル取得失敗`:''}`;
-  }else el.textContent=`入荷数：${total}本（内蔵在庫・オフライン）`;
+  }else if(S.source==='tmdb'&&st)el.textContent=`入荷数：${total}本（TMDB 実データ・映画 ${st.movies}・アニメ ${st.anime}）`;
+  else el.textContent=`入荷数：${total}本（内蔵在庫・オフライン）`;
   renderSvcCount();
 }
 // 選んだサービスで実際に並ぶ本数（配信フラグはサンプル）
@@ -2100,7 +2137,14 @@ function buildCatalog(online){
   const have=new Map(online.map(i=>[nt(i.title),i]));
   return prepare([...online,...demoItems().filter(d=>!have.has(nt(d.title))),...adultItems()]);
 }
+// 通信できない環境（Claude上など）では、すぐに内蔵在庫へ切り替える
+async function netProbe(){
+  const t=u=>fetchJSON(u,5000).then(()=>true,()=>false);
+  const r=await Promise.all([t(`https://itunes.apple.com/jp/rss/topmovies/limit=1/json?yv=${hourStamp()}p`),fetch('https://graphql.anilist.co',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:'{Page(perPage:1){media{id}}}'})}).then(x=>x.ok,()=>false)]);
+  return r.some(Boolean);
+}
 async function fetchOnline(onProgress){
+  if(!(await netProbe()))return null;
   try{return await Promise.race([loadOnline(onProgress),sleep(45000).then(()=>null)]);}catch{return null;}
 }
 async function startAutoLoad(){
@@ -2154,7 +2198,7 @@ $('enter').onclick=async()=>{
     let data=null;
     if(S.mode==='tmdb'){
       if(!S.tmdbKey){st('TMDBのAPIキーを入れてください');return;}
-      try{const r=await loadTMDB(st);const all=prepare([...r.items,...adultItems()]);data=organize(all,S.selected);data.back=r.back;data.backLabel='今週の話題';S.source='tmdb';}
+      try{const r=await loadTMDB(st);const all=prepare([...r.items,...adultItems()]);data=organize(all,S.selected);if(r.back.length){data.back=r.back;data.backLabel='今週の話題';}S.source='tmdb';S.catalog=all;S.stats=countKinds(all);setStock();}
       catch(err){st(`TMDBに接続できませんでした（${err.message}）。自動入荷の在庫で開店します`);await sleep(1600);setMode('auto');}
     }
     if(!data){
@@ -2331,7 +2375,7 @@ function guideToPoint(p,n,dist,onArrive){
 function guideTo(item){
   if(item.adult&&!S.adultOK){guideToGate(true);return;}
   const m=(item.meshes||[]).find(mm=>!mm.userData.onTable)||(item.meshes||[])[0];
-  if(!m){showHint('……すみません、その作品は今、棚に出てないみたいです。');return;}
+  if(!m){showHint('……その作品は棚に入りきらなくて、奥の倉庫です。取ってきますね。',3200);setTimeout(()=>openPreview(item,null),600);return;}
   if(item.adult)openGate();
   const dir=m.rotation.y?new THREE.Vector3(-1,0,0):new THREE.Vector3(0,0,1);
   const {p,n}=worldOf(m,dir);
@@ -2607,9 +2651,29 @@ async function ask(q){
   chatHist.push({role:'user',content:q},{role:'assistant',content:JSON.stringify({reply:res.reply,picks:res.picks.map(p=>p.sid)})});
   if(chatHist.length>10)chatHist.splice(0,chatHist.length-10);
 }
-const aiItems=()=>S.items.filter(it=>!it.adult||S.adultOK).sort((a,b)=>itemPri(b)-itemPri(a)).slice(0,500);
+// 店員に渡す在庫：質問に合う作品（全在庫から検索）＋人気順の上位。全部で500本まで
+let aiQuery='';
+function aiItems(){
+  const pool=S.items.filter(it=>!it.adult||S.adultOK);
+  const q=String(aiQuery||'').normalize('NFKC').toLowerCase();
+  const grams=new Set();
+  for(const w of q.split(/[\s、。！？!?,.「」『』]+/).filter(Boolean)){
+    if(/^[a-z0-9]+$/.test(w)){if(w.length>=3)grams.add(w);continue;}
+    for(let i=0;i+2<=w.length;i++)grams.add(w.slice(i,i+2));
+  }
+  const STOP=new Set(['ない','ある','たい','して','する','です','ます','もの','やつ','映画','作品','おす','すす','すめ','教え','えて','ほし','しい','みた','見た','観た']);
+  for(const g of [...grams])if(STOP.has(g))grams.delete(g);
+  let hits=[];
+  if(grams.size){
+    hits=pool.map(it=>{const t=(it.title+' '+(it.genreText||'')+' '+(AISLE[it.aisle]||{n:''}).n+' '+(it.desc||'')).normalize('NFKC').toLowerCase();let sc=0;for(const g of grams)if(t.includes(g))sc+=it.title.normalize('NFKC').toLowerCase().includes(g)?3:1;return [sc,it];}).filter(x=>x[0]>=2).sort((a,b)=>b[0]-a[0]).slice(0,120).map(x=>x[1]);
+  }
+  const set=new Set(hits);
+  for(const it of [...pool].sort((a,b)=>itemPri(b)-itemPri(a))){if(set.size>=500)break;set.add(it);}
+  return [...set];
+}
 function inventoryText(){return aiItems().map(it=>[it.sid,it.title,it.year||'',(AISLE[it.aisle]||AISLE.trend).n,it.min||'',it.moods.length?it.moods.join('/'):(it.genreText||'').slice(0,16),popsFor(it).length?'POPあり':'',it.leaving?'今月で返却':'',it.adult?`18禁コーナー(${it.rated})`:''].join('|')).join('\n');}
 async function askAI(q){
+  aiQuery=q;
   const bySid=new Map(aiItems().map(it=>[it.sid,it]));
   const prompt=`あなたは深夜営業のレンタルビデオ店「夜更かしビデオ」でバイトしている店員ヨルです。深夜シフトで少し眠そうな、ローテンションだけど丁寧な敬語で話します（「……」を自然に使い、語尾は「〜ですかね」「〜だと思います」など控えめに）。お客さんの気分や時間に合う作品を在庫から選びます。
 ルール:
