@@ -1889,9 +1889,9 @@ function itunesItem(r){
   const art=r.artworkUrl100||r.artworkUrl60;if(!art)return null;
   const g=r.primaryGenreName||'', rating=r.contentAdvisoryRating||'', desc=r.longDescription||r.shortDescription||'';
   const anime=/アニメ|anime/i.test(g), r18=/18/.test(rating);
-  return {key:'it:'+r.trackId,src:'itunes',title:r.trackName,year:(r.releaseDate||'').slice(0,4),min:r.trackTimeMillis?Math.round(r.trackTimeMillis/60000):0,moods:[],
+  return {key:'it:'+r.trackId,src:'itunes',title:cleanTitle(r.trackName),posterTiny:itArt(art,120),year:(r.releaseDate||'').slice(0,4),min:r.trackTimeMillis?Math.round(r.trackTimeMillis/60000):0,moods:[],
     desc:desc.slice(0,90),descLong:desc,genreText:g,jp:/[一-鿿]/.test(r.artistName||''),anime,animeType:anime?'Movie':'',
-    rated:r18?'R18+':/15/.test(rating)?'R15+':null,adult:r18,poster:itArt(art,600),posterSmall:itArt(art,300),link:r.trackViewUrl,linkName:'iTunes'};
+    rated:r18?'R18+':/15/.test(rating)?'R15+':null,adult:r18||/15/.test(rating),poster:itArt(art,600),posterSmall:itArt(art,300),link:r.trackViewUrl,linkName:'iTunes'};
 }
 const cleanTitle=t=>String(t).replace(/\s*[（(]\s*(字幕|吹替|日本語|吹き替え)[^)）]*[)）]\s*$/,'').replace(/\s*[（(]\s*(字幕|吹替)[^)）]*[)）]\s*$/,'').trim();
 function rssItem(e,i,hint){
@@ -1958,15 +1958,54 @@ async function loadOnline(progress){
       for(let p=1;p<=6;p++){try{const u=`https://api.jikan.moe/v4/top/anime?page=${p}&limit=25&sfw=true`;let j;try{j=await fetchJSON(u);}catch{await sleep(1300);j=await fetchJSON(u);}(j.data||[]).forEach((a,i)=>{const it=jikanItem(a);if(it){it.rank=(p-1)*25+i;add(it);}});report();}catch{if(p===1)break;}await sleep(450);}
     })(),
   ]);
+  // iTunesの作品にAppleのレーティングを付ける（15+→R15+、18+→R18+。不明な作品は一般の棚のまま）
+  await rateItunes([...map.values()].filter(i=>i.src==='itunes'));
+  // 深夜アニメ（AniListのEcchi・Horror。公式の年齢区分ではないので「深夜」表示）
+  for(const [g,pages] of [['Ecchi',4],['Horror',2]]){
+    for(let p=1;p<=pages;p++){
+      try{await sleep(1500);const j=await anilist(`query{Page(page:${p},perPage:50){media(type:ANIME,genre_in:["${g}"],sort:POPULARITY_DESC,isAdult:false,countryOfOrigin:"JP"){id title{native romaji} coverImage{extraLarge large medium} description(asHtml:false) format seasonYear episodes duration averageScore genres siteUrl}}}`);
+        ((j.data&&j.data.Page&&j.data.Page.media)||[]).forEach((m,i)=>{const it=anilistItem(m,(p-1)*50+i);if(!it)return;const ex=map.get(it.key);const t=ex||it;
+          if(!ex&&(g==='Ecchi'||(m.genres||[]).includes('Ecchi'))){t.adult=true;t.rated='深夜';t.aisle='a_anime';} // 一般の人気作はアニメ棚のまま
+          if(!ex)add(t);});report();}catch{break;}
+    }
+  }
   const list=[...map.values()];list.failedFeeds=failed;
   return list;
 }
+async function rateItunes(items){
+  const byId=new Map(items.map(i=>[i.key.slice(3),i]));const ids=[...byId.keys()];
+  for(let i=0;i<ids.length;i+=150){
+    try{const d=await jsonp(`https://itunes.apple.com/lookup?country=JP&id=${ids.slice(i,i+150).join(',')}`,12000);
+      for(const r of d.results||[]){const it=byId.get(String(r.trackId));if(!it)continue;applyRating(it,r.contentAdvisoryRating);}}catch{}
+    await sleep(350);
+  }
+}
+function applyRating(it,r){
+  if(r==='18+'){it.adult=true;it.rated='R18+';}
+  else if(r==='15+'){it.adult=true;it.rated='R15+';}
+  else return;
+  it.aisle=adultAisle(it);it.ratedSrc='iTunes';
+}
+// 18禁コーナーの補充：レーティング付きの作品をiTunes検索から集める（時間がかかるので開店後に裏で）
+const ADULT_TERMS=['官能','エロス','情事','愛欲','不倫','禁断','背徳','誘惑','欲望','人妻','ホラー','スプラッター','ゾンビ','サイコ','猟奇','殺人','連続殺人','監禁','拷問','復讐','狂気','暴力','バイオレンス','ヤクザ','極道','任侠','仁義','抗争','ギャング','マフィア','犯罪','刑務所','麻薬','裏社会','日活','ロマンポルノ','ピンク','東映','角川','サスペンス','スリラー','悪魔','呪い','怨霊','心霊','デスゲーム','戦争','R15','エロティック'];
+async function huntAdult(have,onFound){
+  const seen=new Set(have.map(i=>i.key));const out=[];
+  for(const t of ADULT_TERMS){
+    try{const d=await jsonp(`https://itunes.apple.com/search?country=JP&limit=200&term=${encodeURIComponent(t)}`,12000);
+      for(const r of d.results||[]){
+        if(r.kind!=='feature-movie'||(r.contentAdvisoryRating!=='18+'&&r.contentAdvisoryRating!=='15+'))continue;
+        const it=itunesItem(r);if(!it||seen.has(it.key))continue;seen.add(it.key);applyRating(it,r.contentAdvisoryRating);out.push(it);
+      }}catch{}
+    await sleep(3100); // iTunes検索は1分あたり約20回まで
+  }
+  return out;
+}
 // 取得した在庫は12時間ブラウザに保存（次回は一瞬で開店）
 const CAT_KEY='yv_catalog_v5';
-const CAT_FIELDS=['key','src','title','titleEn','year','min','eps','desc','descLong','synLang','genreText','jp','anime','animeType','rank','rankNew','aisleHint','rated','adult','aisle','rental','rating','ratingSrc','poster','posterSmall','posterTiny','link','linkName'];
-function saveCatalog(list){const st=countKinds(list);if(st.movies<300||st.anime<50)return;try{const items=list.map(it=>{const o={};for(const k of CAT_FIELDS)if(it[k]!=null&&it[k]!=='')o[k]=k==='descLong'?String(it[k]).slice(0,420):it[k];return o;});localStorage.setItem(CAT_KEY,JSON.stringify({t:Date.now(),items}));}catch{}}
-function loadCatalog(){try{const c=JSON.parse(localStorage.getItem(CAT_KEY)||'null');if(c&&Date.now()-c.t<7*24*3600e3&&c.items&&c.items.length>=60){const l=c.items.map(o=>({...o,moods:[]}));l.savedAt=c.t;return l;}}catch{}return null;}
-function countKinds(list){let movies=0,anime=0;for(const it of list){if(it.adult)continue;if(it.anime)anime++;else movies++;}return {movies,anime};}
+const CAT_FIELDS=['key','src','title','titleEn','year','min','eps','desc','descLong','synLang','genreText','jp','anime','animeType','rank','rankNew','aisleHint','rated','ratedSrc','adult','aisle','rental','rating','ratingSrc','poster','posterSmall','posterTiny','link','linkName'];
+function saveCatalog(list,keepHunt){const st=countKinds(list);if(st.movies<300||st.anime<50)return;try{const items=list.map(it=>{const o={};for(const k of CAT_FIELDS)if(it[k]!=null&&it[k]!=='')o[k]=k==='descLong'?String(it[k]).slice(0,420):it[k];return o;});localStorage.setItem(CAT_KEY,JSON.stringify({t:Date.now(),h:list.huntedAt||0,items}));}catch{}}
+function loadCatalog(){try{const c=JSON.parse(localStorage.getItem(CAT_KEY)||'null');if(c&&Date.now()-c.t<7*24*3600e3&&c.items&&c.items.length>=60){const l=c.items.map(o=>({...o,moods:[]}));l.savedAt=c.t;l.huntedAt=c.h||0;return l;}}catch{}return null;}
+function countKinds(list){let movies=0,anime=0,adult=0;for(const it of list){if(it.adult){adult++;continue;}if(it.anime)anime++;else movies++;}return {movies,anime,adult};}
 async function tmdb(path,params={}){
   const u=new URL('https://api.themoviedb.org/3'+path);
   for(const [k,v] of Object.entries(params))u.searchParams.set(k,v);
@@ -1981,11 +2020,11 @@ function tmdbItem(r,type,aisle){
     poster:r.poster_path?`https://image.tmdb.org/t/p/w500${r.poster_path}`:null,posterSmall:r.poster_path?`https://image.tmdb.org/t/p/w185${r.poster_path}`:null,posterTiny:r.poster_path?`https://image.tmdb.org/t/p/w92${r.poster_path}`:null};
 }
 // TMDB実データ：サービスごと×棚ごとに「日本で見放題配信中」の作品を取り、本物の配信先を付ける
-const TMDB_CAT_KEY='yv_tmdbcat_v1';
+const TMDB_CAT_KEY='yv_tmdbcat_v2';
 async function loadTMDB(status){
   const sig=[...S.selected].sort().join(',');
   try{const c=JSON.parse(localStorage.getItem(TMDB_CAT_KEY)||'null');
-    if(c&&c.sig===sig&&Date.now()-c.t<24*3600e3&&c.items&&c.items.length){status(`TMDBの在庫を読み込み中…（${c.items.length}本）`);return {items:c.items.map(o=>({...tmdbItem(o,o.ty,o.ai),services:o.sv})),back:[]};}}catch{}
+    if(c&&c.sig===sig&&Date.now()-c.t<24*3600e3&&c.items&&c.items.length){status(`TMDBの在庫を読み込み中…（${c.items.length}本）`);return {items:c.items.map(o=>({...tmdbItem(o,o.ty,o.ai),services:o.sv,...(o.rt?{rated:o.rt,adult:true,anime:false}:{})})),back:[]};}}catch{}
   status('配信サービスを確認中…');
   const [pm,pt]=await Promise.all([tmdb('/watch/providers/movie',{watch_region:'JP',language:'ja-JP'}),tmdb('/watch/providers/tv',{watch_region:'JP',language:'ja-JP'})]);
   const all=[...pm.results,...pt.results];
@@ -2008,9 +2047,22 @@ async function loadTMDB(status){
       status(`TMDBから入荷中… ${seen.size}本`);
     });
   }
-  await pool(tasks,8);
+  // 日本のレーティング（R18+・R15+）で検索して18禁コーナーへ
+  const certTasks=[];
+  for(const [k,ids] of Object.entries(svcIds))for(const [cert,max] of [['R18+',4],['R15+',8]]){
+    certTasks.push(async()=>{
+      for(let page=1;page<=max;page++){
+        let r;try{r=await tmdb('/discover/movie',{watch_region:'JP',with_watch_providers:ids.join('|'),with_watch_monetization_types:'flatrate',language:'ja-JP',sort_by:'popularity.desc',certification_country:'JP',certification:cert,page});}catch{break;}
+        for(const x of r.results||[]){const key=`tmdb:movie:${x.id}`;let it=seen.get(key);if(!it){it=tmdbItem(x,'movie','drama');seen.set(key,it);}
+          if(!it.services.includes(k))it.services.push(k);
+          if(it.rated!=='R18+'){it.rated=cert;it.adult=true;it.anime=false;const g=x.genre_ids||[];it.aisle=g.some(n=>[27,53,28,80,10752].includes(n))?'a_violence':g.some(n=>[10749,18].includes(n))?'a_erotic':'a_r18';}}
+        if(page>=(r.total_pages||1))break;
+      }
+    });
+  }
+  await pool([...tasks,...certTasks],8);
   const items=[...seen.values()];
-  try{localStorage.setItem(TMDB_CAT_KEY,JSON.stringify({t:Date.now(),sig,items:items.map(it=>({id:it.tmdb.id,ty:it.tmdb.type,ai:it.aisle,sv:it.services,title:it.title,name:it.title,release_date:it.year?it.year+'-01-01':'',overview:(it.descLong||'').slice(0,60),vote_average:it.rating,vote_count:it.rating?1:0,poster_path:it.posterPath||null}))}));}catch{}
+  try{localStorage.setItem(TMDB_CAT_KEY,JSON.stringify({t:Date.now(),sig,items:items.map(it=>({id:it.tmdb.id,ty:it.tmdb.type,ai:it.aisle,sv:it.services,rt:it.rated||undefined,title:it.title,name:it.title,release_date:it.year?it.year+'-01-01':'',overview:(it.descLong||'').slice(0,60),vote_average:it.rating,vote_count:it.rating?1:0,poster_path:it.posterPath||null}))}));}catch{}
   status('話題作をチェック中…');
   let back=[];
   try{const tr=await tmdb('/trending/all/week',{language:'ja-JP'});back=tr.results.filter(r=>r.media_type==='movie'||r.media_type==='tv').map(r=>seen.get(`tmdb:${r.media_type}:${r.id}`)).filter(Boolean).slice(0,24);}catch{}
@@ -2051,7 +2103,7 @@ function setStock(state,n){
   pill.classList.remove('busy');
   const total=S.catalog.length,st=S.stats;
   if(S.source==='online'&&st){
-    el.textContent=`入荷数：${total}本（映画 ${st.movies}・アニメ ${st.anime}${S.cached?'・前回の入荷分':''}）${S.failedFeeds?` ※${S.failedFeeds}ジャンル取得失敗`:''}`;
+    el.textContent=`入荷数：${total}本（映画 ${st.movies}・アニメ ${st.anime}・18禁 ${st.adult}${S.cached?'・前回の入荷分':''}）${S.failedFeeds?` ※${S.failedFeeds}ジャンル取得失敗`:''}`;
   }else if(S.source==='tmdb'&&st)el.textContent=`入荷数：${total}本（TMDB 実データ・映画 ${st.movies}・アニメ ${st.anime}）`;
   else el.textContent=`入荷数：${total}本（内蔵在庫・オフライン）`;
   renderSvcCount();
@@ -2127,7 +2179,7 @@ async function lookupPosters(items){
   if(!$('list').classList.contains('hidden'))renderList();
 }
 function capByAisle(list){
-  const by={};for(const it of list){const a=it.adult?(it.aisle||'a'):classify(it);(by[a] ||= []).push(it);}
+  const by={};for(const it of list){const a=it.adult?(it.aisle||adultAisle(it)):classify(it);(by[a] ||= []).push(it);}
   const out=[];for(const arr of Object.values(by)){arr.sort((a,b)=>itemPri(b)-itemPri(a));out.push(...arr.slice(0,AISLE_CAP));}
   return out;
 }
@@ -2156,6 +2208,7 @@ async function startAutoLoad(){
     if(S.phase==='start')await openStore(organize(S.catalog,new Set(SERVICES.map(s=>s.k))));
     setStock();
     refreshInBackground(cached);
+    if(!cached.huntedAt||Date.now()-cached.huntedAt>3*24*3600e3)adultInBackground(cached);
     return;
   }
   const online=await fetchOnline(n=>setStock('loading',n));
@@ -2164,14 +2217,33 @@ async function startAutoLoad(){
     saveCatalog(online);
     S.catalog=buildCatalog(online);S.source='online';S.cached=false;S.stats=countKinds(S.catalog);S.failedFeeds=S.failedFeeds||online.failedFeeds||0;
     if(S.phase==='start')await openStore(organize(S.catalog,new Set(SERVICES.map(s=>s.k))));
+    setStock();
+    adultInBackground(online);
+    return;
   }
   setStock();
+}
+let adultHunting=false;
+async function adultInBackground(base){
+  if(adultHunting)return;adultHunting=true;
+  try{
+    const extra=await huntAdult(base);
+    if(!extra.length)return;
+    const merged=[...base.filter(i=>!extra.some(e=>e.key===i.key)),...extra];
+    merged.huntedAt=Date.now();saveCatalog(merged,true);
+    S.catalog=buildCatalog(merged);S.stats=countKinds(S.catalog);
+    S.newArrivals=0;S.adultArrivals=extra.length;
+    if(S.phase==='store')S.pendingRestock=true;else if(S.phase==='start')await openStore(organize(S.catalog,new Set(SERVICES.map(s=>s.k))));
+    setStock();
+  }finally{adultHunting=false;}
 }
 async function refreshInBackground(old){
   if(old.savedAt&&Date.now()-old.savedAt<30*60e3)return; // 30分以内に入荷済みなら省略
   const fresh=await fetchOnline(()=>{});
   if(!fresh||fresh.length<60)return;
   const st=countKinds(fresh);if(st.movies<300||st.anime<50)return;
+  const keep=old.filter(i=>i.adult&&i.src==='itunes'&&!fresh.some(f=>f.key===i.key));
+  if(keep.length){fresh.push(...keep);fresh.huntedAt=old.huntedAt;}
   saveCatalog(fresh);
   const oldKeys=new Set(old.map(i=>i.key));
   const added=fresh.filter(i=>!oldKeys.has(i.key)).length;
@@ -2186,7 +2258,8 @@ async function applyRestock(){
   if(!S.pendingRestock||S.restocking||pv||S.modal||guide||S.phase!=='store')return;
   S.pendingRestock=false;S.restocking=true;
   try{await openStore(organize(S.catalog,S.selected));updateBadge();
-    if(S.newArrivals)showHint(`……新しく${S.newArrivals}本、入荷しました。`,4200);}
+    if(S.newArrivals)showHint(`……新しく${S.newArrivals}本、入荷しました。`,4200);
+    else if(S.adultArrivals)showHint(`……奥の18禁コーナーに${S.adultArrivals}本、追加しておきました。`,4200);S.adultArrivals=0;}
   finally{S.restocking=false;}
 }
 setInterval(()=>{applyRestock();},2000);
@@ -2539,7 +2612,24 @@ $('pvGuide').onclick=()=>{if(!pv)return;const it=pv.item;closePreview();setTimeo
 $('pvPop').onclick=()=>{const d=$('pvDrawer');const open=d.classList.contains('hidden');d.classList.toggle('hidden',!open);$('pvPop').classList.toggle('on',open);if(open)renderPopDrawer();};
 const PV_STATIC='公開年上映時間ジャンル管理番号見放題配信こんな夜にSTAFF COMMENT出演※画像はイメージです本商品はレンタル専用です。権利者の許諾なく複製・放送・公開上映することは法律で禁じられています。許諾済店長推し度TMDB評価MAL評価分TVシリーズ配信情報・評価はデモ用サンプル';
 function pvText(it){return [it.title,it.descLong||it.desc||'',catchCopy(it),(it.cast||[]).join(''),PV_STATIC,(it.services||[]).map(k=>SVC[k].n).join('')];}
-function svcSearch(name,title){return `https://www.google.com/search?q=${encodeURIComponent(`"${title}" ${name}`)}`;}
+// 各サービスの検索結果ページへ直接（2026年11月にURLを確認。Disney+だけは検索ページが外から開けないためサイト内検索）
+const SVC_URL={
+  netflix:q=>`https://www.netflix.com/search?q=${q}`,
+  prime:q=>`https://www.amazon.co.jp/s?k=${q}&i=instant-video`,
+  unext:q=>`https://video.unext.jp/freeword?query=${q}`,
+  disney:q=>`https://www.google.com/search?btnI=1&q=${encodeURIComponent('site:disneyplus.com ')}${q}`,
+  hulu:q=>`https://www.hulu.jp/search?q=${q}`,
+  danime:q=>`https://animestore.docomo.ne.jp/animestore/sch_pc?searchKey=${q}`,
+  abema:q=>`https://abema.tv/search?q=${q}`,
+  dmm:q=>`https://tv.dmm.com/vod/list/?keyword=${q}`,
+  lemino:q=>`https://lemino.docomo.ne.jp/search/word/${q}`,
+};
+const searchTitle=t=>String(t).replace(/[《〈【\[（(][^》〉】\]）)]*[》〉】\]）)]\s*(版)?\s*$/,'').replace(/^劇場版\s*/,'').replace(/[『』「」]/g,' ').trim()||String(t);
+function svcKeyOf(name){const s=SERVICES.find(x=>x.re.test(name)||x.n===name||x.k===name);return s&&s.k;}
+function svcSearch(name,title){
+  const k=svcKeyOf(name),q=encodeURIComponent(searchTitle(title));
+  return k&&SVC_URL[k]?SVC_URL[k](q):`https://www.google.com/search?q=${encodeURIComponent(`"${searchTitle(title)}" ${name}`)}`;
+}
 function fillPanel(){
   const it=pv.item,a=AISLE[it.aisle]||AISLE.trend;
   $('pvTitle').textContent=it.title;
@@ -2548,7 +2638,7 @@ function fillPanel(){
   if(it.tmdb){
     if(!it.prov)svcs='<span class="meta">配信先を確認中…</span>';
     else if(!it.prov.names.length)svcs='<span class="meta">日本での見放題配信は見つかりませんでした</span>';
-    else svcs=it.prov.names.map(n=>`<a class="sbtn" target="_blank" rel="noopener" href="${esc(it.prov.link||svcSearch(n,it.title))}"><i></i>${esc(n)}<small>で観る</small></a>`).join('');
+    else svcs=it.prov.names.map(n=>{const k=svcKeyOf(n);return `<a class="sbtn" ${k?`style="--c:${SVC[k].c}"`:''} target="_blank" rel="noopener" href="${esc(svcSearch(n,it.title))}"><i></i>${esc(k?SVC[k].n:n)}<small>で観る</small></a>`;}).join('');
     $('pvNote').textContent=it.prov&&it.prov.names.length?'配信情報：JustWatch（TMDB経由）':'';
   }else{
     svcs=it.services.map(k=>`<a class="sbtn" style="--c:${SVC[k].c}" target="_blank" rel="noopener" href="${esc(svcSearch(SVC[k].n,it.title))}"><i></i>${esc(SVC[k].n)}<small>で探す</small></a>`).join('');
