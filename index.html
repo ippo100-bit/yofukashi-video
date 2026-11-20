@@ -302,7 +302,7 @@ details p{margin:6px 0;line-height:1.6}
       <p>💻 WASD・矢印キーで移動／ドラッグで見回す／クリックで手に取る</p>
       <p>手に取ったケースはドラッグで回転、「裏面を見る」であらすじを確認できます。🛎 店員さんに相談すると、棚まで案内してくれます。</p>
     </details>
-    <p class="legal">自動入荷は iTunes（Apple）と AniList の公開データを使います（届かない場合は Jikan / MyAnimeList）。通信できないとき（Claude上で開いたときなど）は内蔵在庫で営業します。配信サービスの表示は自動割り当てのサンプルで、実際の配信状況とは異なります。ポスターを読み込めない作品のジャケットは自動生成のイメージです。TMDBモードは TMDB（配信情報は JustWatch 提供）を利用します。This product uses the TMDB API but is not endorsed or certified by TMDB.</p>
+    <p class="legal">自動入荷は iTunes（Apple）と AniList の公開データを使います（届かない場合は Jikan / MyAnimeList）。通信できないとき（Claude上で開いたときなど）は内蔵在庫で営業します。配信サービスの表示は自動割り当てのサンプルで、実際の配信状況とは異なります。ポスターを読み込めない作品のジャケットは自動生成のイメージです。TMDBモードは TMDB（配信情報は JustWatch 提供）を利用します。This product uses the TMDB API but is not endorsed or certified by TMDB. 入口の外の景色は、Micael Widell さん撮影の写真（<a href="https://commons.wikimedia.org/wiki/File:Shibuya_Crossing_Tokyo_At_Night_(150285427).jpeg" target="_blank" rel="noopener">Wikimedia Commons</a>、<a href="https://creativecommons.org/licenses/by/3.0/deed.ja" target="_blank" rel="noopener">CC BY 3.0</a>）を、少し暗くして表示しています。</p>
   </div>
 </div>
 <div id="loading" class="hidden">OPENING…</div>
@@ -1033,7 +1033,9 @@ function wall(x,z,ry,len,wm=wallMat,wnm=wainMat){
   const bb=box(len,0.1,0.02,baseMat);bb.position.set(0,0.05,0.01);g.add(bb);
   return g;
 }
-wall(RCX,ROOM.z1,Math.PI,RW); wall(ROOM.x0,RCZ,Math.PI/2,RD); wall(ROOM.x1,RCZ,-Math.PI/2,RD);
+wall((ROOM.x0-1)/2,ROOM.z1,Math.PI,-1-ROOM.x0); wall((1+ROOM.x1)/2,ROOM.z1,Math.PI,ROOM.x1-1);
+{const hdr=plane(2,ROOM.h-2.4,wallMat);hdr.position.set(0,2.4+(ROOM.h-2.4)/2,ROOM.z1);hdr.rotation.y=Math.PI;scene.add(hdr);}
+wall(ROOM.x0,RCZ,Math.PI/2,RD); wall(ROOM.x1,RCZ,-Math.PI/2,RD);
 // 仕切り壁（入口の開口部を残す）
 wall((ROOM.x0+GL)/2,ROOM.z0,0,GL-ROOM.x0); wall((GR+ROOM.x1)/2,ROOM.z0,0,ROOM.x1-GR);
 {const hdr=plane(ADULT.gateW,ROOM.h-GATE_H,wallMat);hdr.position.set(ADULT.gateX,GATE_H+(ROOM.h-GATE_H)/2,ROOM.z0);scene.add(hdr);
@@ -1147,6 +1149,165 @@ function wallSign(c,w,h,x,y,z,ry,emissive=0.25){
   return m;
 }
 let neonMesh;
+/* ---------------------------------------------------------------------
+   店の外：深夜のスクランブル交差点（全部この場で描いたオリジナル）
+   --------------------------------------------------------------------- */
+const outside={cars:[],peds:[],screens:[],t:0};
+function buildOutside(){
+  const Z0=ROOM.z1, CX=0, CZ=Z0+13;         // 交差点の中心
+  const g=new THREE.Group();scene.add(g);
+  const B=(o={})=>new THREE.MeshBasicMaterial({fog:false,...o});
+  // 空
+  const sky=mkCanvas(64,512,(x,w,h)=>{const gr=x.createLinearGradient(0,0,0,h);gr.addColorStop(0,'#05060f');gr.addColorStop(.55,'#141a3a');gr.addColorStop(.8,'#3a2550');gr.addColorStop(1,'#6b3a4a');x.fillStyle=gr;x.fillRect(0,0,w,h);});
+  const dome=new THREE.Mesh(new THREE.SphereGeometry(260,24,12,0,Math.PI*2,0,Math.PI/2),B({map:toTex(sky),side:THREE.BackSide}));dome.position.set(0,-10,Z0);g.add(dome);
+  // 路面（交差点・横断歩道・街灯の光だまり）
+  const S=48,PX=1024/S;
+  const road=mkCanvas(1024,1024,(x,w,h)=>{
+    x.fillStyle='#17191f';x.fillRect(0,0,w,h);
+    const R=rng(11);for(let k=0;k<9000;k++){x.fillStyle=`rgba(255,255,255,${R()*0.035})`;x.fillRect(R()*w,R()*h,2,2);}
+    const m=v=>v*PX, cx=w/2, cz=m(13); // 店の前の歩道ぎわ = 上端
+    // 歩道
+    x.fillStyle='#202229';x.fillRect(0,0,w,m(2.2));x.fillRect(0,0,m(S/2-9),m(S));x.fillRect(w-m(S/2-9),0,m(S/2-9),m(S));x.fillRect(0,m(24),w,h);
+    x.fillStyle='#3a3d46';x.fillRect(0,m(2.2)-3,w,3);
+    // 横断歩道（4辺＋斜め2本）
+    x.fillStyle='rgba(205,210,222,.34)';
+    const zebra=(x0,z0,x1,z1,width)=>{const L=Math.hypot(x1-x0,z1-z0),n=Math.floor(L/0.9),ux=(x1-x0)/L,uz=(z1-z0)/L;x.save();x.translate(m(x0)+cx,m(z0));x.rotate(Math.atan2(uz,ux));for(let k=0;k<n;k++)x.fillRect(m(k*0.9+0.2),-m(width/2),m(0.48),m(width));x.restore();};
+    zebra(-8,4,8,4,3.4);zebra(-8,22,8,22,3.4);zebra(-9.2,5.5,-9.2,20.5,3.4);zebra(9.2,5.5,9.2,20.5,3.4);
+    zebra(-7,6,7,20,3.2);zebra(7,6,-7,20,3.2);
+    // 車線
+    x.strokeStyle='rgba(240,240,240,.5)';x.lineWidth=3;x.setLineDash([m(3),m(3)]);
+    for(const zz of [13])for(const [a,b] of [[0,m(S/2-11.5)],[w-m(S/2-11.5),w]]){x.beginPath();x.moveTo(a,m(zz));x.lineTo(b,m(zz));x.stroke();}
+    x.beginPath();x.moveTo(cx,m(24));x.lineTo(cx,h);x.stroke();x.setLineDash([]);
+    x.fillStyle='rgba(240,240,240,.7)';x.fillRect(cx-m(6),m(24)+m(1.4),m(5.6),m(0.3));
+    // 濡れた路面の光
+    const glow=(gx,gz,r,c)=>{const gr=x.createRadialGradient(cx+m(gx),m(gz),0,cx+m(gx),m(gz),m(r));gr.addColorStop(0,c);gr.addColorStop(1,'rgba(0,0,0,0)');x.fillStyle=gr;x.fillRect(cx+m(gx-r),m(gz-r),m(r*2),m(r*2));};
+    for(const [gx,gz] of [[-11,2],[11,2],[-11,24],[11,24]])glow(gx,gz,5,'rgba(255,200,130,.16)');
+    glow(-14,30,10,'rgba(80,160,255,.18)');glow(13,28,9,'rgba(255,60,80,.2)');glow(4,40,10,'rgba(255,120,200,.14)');
+  });
+  const ground=plane(S,S,B({map:toTex(road)}));ground.rotation.x=-Math.PI/2;ground.position.set(CX,0.01,Z0+S/2);g.add(ground);
+  const far=plane(400,300,B({color:'#121318'}));far.rotation.x=-Math.PI/2;far.position.set(0,0,Z0+150);g.add(far);
+
+  // 建物の窓テクスチャ
+  const facade=(seed,{bg='#0c0e16',lit=['#c9a46a','#7f97c4','#d8c08e'],cols=8,rows=24,p=0.28,glass=false}={})=>toTex(mkCanvas(256,512,(x,w,h)=>{
+    const R=rng(seed);x.fillStyle=bg;x.fillRect(0,0,w,h);
+    const cw=w/cols,rh=h/rows;
+    for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){const on=R()<p;x.fillStyle=on?lit[(R()*lit.length)|0]:(glass?'#1e2a44':'#0b0d14');x.globalAlpha=on?0.35+R()*0.5:1;x.fillRect(c*cw+5,r*rh+4,cw-10,rh-(glass?5:9));}
+    x.globalAlpha=1;if(glass){x.fillStyle='rgba(120,170,255,.08)';for(let k=0;k<6;k++)x.fillRect(R()*w,0,8+R()*20,h);}
+  }));
+  const FAC=[facade(1),facade(2,{bg:'#0e1220',glass:true,cols:12,rows:40,p:0.3,lit:['#7f9fd8','#a9c0e8']}),facade(3,{cols:6,rows:16,p:0.4,lit:['#d9a86a','#c98a5a']}),facade(4,{bg:'#141722',cols:10,rows:30,p:0.22})];
+  const bld=(x,z,w,d,h,fi,rot=0)=>{const t=FAC[fi].clone();t.needsUpdate=true;t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(Math.max(1,Math.round(w/5)),Math.max(1,Math.round(h/12)));
+    const side=B({map:t}),top=B({color:'#0b0c12'});const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),[side,side,top,top,side,side]);m.position.set(x,h/2,z);m.rotation.y=rot;g.add(m);return m;};
+  // 看板・スクリーン
+  const neon=(w,h,draw)=>B({map:toTex(mkCanvas(w,h,draw)),transparent:true});
+  const sign=(mat,w,h,x,y,z,ry=0)=>{const m=plane(w,h,mat);m.position.set(x,y,z);m.rotation.y=ry;g.add(m);return m;};
+  const J='"Zen Kaku Gothic New",sans-serif', D='"Dela Gothic One",sans-serif';
+  const screenFrames=[
+    (x,w,h)=>{const gr=x.createLinearGradient(0,0,w,h);gr.addColorStop(0,'#2b0a4a');gr.addColorStop(1,'#0a1a4a');x.fillStyle=gr;x.fillRect(0,0,w,h);x.textAlign='center';x.textBaseline='middle';
+      for(let b=24;b>0;b-=8){x.shadowColor='#ff5fa8';x.shadowBlur=b;x.fillStyle='#ffb3d6';x.font=`72px ${D}`;x.fillText('今夜、なに観る？',w/2,h*0.42);}x.shadowBlur=0;x.fillStyle='#fff';x.font=`700 30px ${J}`;x.fillText('夜更かしビデオ　深夜2時まで営業中',w/2,h*0.75);},
+    (x,w,h)=>{const gr=x.createLinearGradient(0,0,0,h);gr.addColorStop(0,'#ff8a00');gr.addColorStop(1,'#ff2e63');x.fillStyle=gr;x.fillRect(0,0,w,h);x.fillStyle='#fff';x.textAlign='center';x.textBaseline='middle';
+      x.font=`92px ${D}`;x.fillText('深夜映画祭',w/2,h*0.42);x.font=`700 34px Oswald,sans-serif`;x.fillText('11.20 FRI — ALL NIGHT',w/2,h*0.76);},
+    (x,w,h)=>{x.fillStyle='#050510';x.fillRect(0,0,w,h);const R=rng(9);for(let k=0;k<26;k++){const r=10+R()*70;x.fillStyle=`hsla(${R()*360},90%,60%,.75)`;x.beginPath();x.arc(R()*w,R()*h,r,0,7);x.fill();}
+      x.fillStyle='#fff';x.font=`700 40px Oswald,sans-serif`;x.textAlign='center';x.fillText('MIDNIGHT  MUSIC  NOW',w/2,h-40);},
+  ];
+  OUT_FRAMES=screenFrames;
+  const screen=(w,h,x,y,z,ry,start)=>{const c=mkCanvas(512,288,()=>{}),t=toTex(c);const m=sign(B({map:t}),w,h,x,y,z,ry);outside.screens.push({c,t,i:start,n:0});screenFrames[start%3](c.getContext('2d'),512,288);t.needsUpdate=true;return m;};
+
+  // ── 正面奥：大通りが奥へ続く
+  bld(-16,Z0+34,14,10,46,0);bld(-6.5,Z0+44,8,10,30,3);bld(7,Z0+46,9,10,38,2);bld(-11,Z0+62,12,12,70,1);bld(10,Z0+64,12,12,90,1);bld(0,Z0+92,20,12,120,1);
+  // 左：大型ビジョンのビル群
+  const L1=bld(-18,Z0+16,10,14,34,3);
+  screen(9,5.2,-12.95,14,Z0+15,Math.PI/2,0);
+  screen(6.4,3.6,-12.95,7.5,Z0+20,Math.PI/2,2);
+  bld(-20,Z0+4,8,10,22,2);
+  screen(8,4.5,7,16,Z0+40.95,Math.PI,1);
+  sign(neon(128,512,(x,w,h)=>{x.fillStyle='#0d1a3a';x.fillRect(0,0,w,h);x.fillStyle='#7fd3ff';x.textAlign='center';x.font=`900 72px ${J}`;['カ','ラ','オ','ケ'].forEach((c,i)=>x.fillText(c,w/2,90+i*110));}),1.4,5.6,-15.95,9,Z0+2,Math.PI/2);
+  // 右手前：円柱ビル＋縦長の巨大看板（オリジナルのフクロウ）
+  const cyl=new THREE.Mesh(new THREE.CylinderGeometry(4.5,4.5,26,28,1,true),B({map:(()=>{const t=FAC[3].clone();t.needsUpdate=true;t.wrapS=THREE.RepeatWrapping;t.repeat.set(4,2);return t;})()}));
+  cyl.position.set(15,13,Z0+27);g.add(cyl);
+  const owl=mkCanvas(256,768,(x,w,h)=>{const gr=x.createLinearGradient(0,0,0,h);gr.addColorStop(0,'#0c0f2e');gr.addColorStop(1,'#2a0d3a');x.fillStyle=gr;x.fillRect(0,0,w,h);
+    x.fillStyle='#ffe066';x.font=`110px ${D}`;x.textAlign='center';x.fillText('11.30',w/2,120);
+    x.fillStyle='#8a6cff';x.beginPath();x.ellipse(w/2,330,95,120,0,0,7);x.fill();
+    for(const sx of [-42,42]){x.fillStyle='#fff';x.beginPath();x.arc(w/2+sx,300,36,0,7);x.fill();x.fillStyle='#111';x.beginPath();x.arc(w/2+sx,300,16,0,7);x.fill();}
+    x.fillStyle='#ffb000';x.beginPath();x.moveTo(w/2-12,345);x.lineTo(w/2+12,345);x.lineTo(w/2,372);x.fill();
+    x.fillStyle='#fff';x.font=`900 64px ${J}`;['夜','更','か','し','祭'].forEach((c,i)=>x.fillText(c,w/2,500+i*58));});
+  const bb=sign(B({map:toTex(owl)}),5,15,15,16,Z0+22.4,Math.PI*0.92);
+  // 右手前：低層の赤い看板の店
+  bld(18,Z0+17,10,10,7,2);
+  sign(neon(1024,256,(x,w,h)=>{x.fillStyle='#d90429';x.fillRect(0,0,w,h);x.strokeStyle='#fff';x.lineWidth=10;x.strokeRect(14,14,w-28,h-28);x.fillStyle='#fff';x.textAlign='center';x.textBaseline='middle';x.font=`900 130px ${J}`;x.fillText('ドラッグ ヨアケ',w/2,h/2+6);}),8,2,13.2,5.6,Z0+12.5,-Math.PI/2);
+  // 右奥：高架の駅（緑の帯）
+  const rail=box(60,1.6,5,B({color:'#3b4a40'}));rail.position.set(40,6.4,Z0+40);g.add(rail);
+  for(let k=0;k<6;k++){const pl=box(1,5.6,1,B({color:'#2a2f2b'}));pl.position.set(14+k*9,2.8,Z0+40);g.add(pl);}
+  sign(neon(1024,96,(x,w,h)=>{x.fillStyle='#1d6b3a';x.fillRect(0,0,w,h);x.fillStyle='#fff';x.font=`900 64px ${J}`;x.textAlign='center';x.textBaseline='middle';x.fillText('夜 更 坂 駅',w/2,h/2+3);}),14,1.3,22,6.4,Z0+37.45,Math.PI);
+  bld(30,Z0+55,14,14,80,1);bld(24,Z0+30,8,8,24,0);
+  // 小さなネオン看板
+  [['居酒屋','#ff6b6b',-13.3,4,Z0+28],['24h','#4dd2ff',-13.3,3.2,Z0+24],['BAR','#ffd43b',13.3,8.5,Z0+31]].forEach(([t,c,x0,y0,z0])=>{
+    sign(neon(256,128,(x,w,h)=>{x.textAlign='center';x.textBaseline='middle';x.font=`900 64px ${J}`;for(let b=20;b>0;b-=7){x.shadowColor=c;x.shadowBlur=b;x.fillStyle='#fff';x.fillText(t,w/2,h/2);}}),2,1,x0,y0,z0,x0<0?Math.PI/2:-Math.PI/2);});
+
+  // 街灯・信号・街路樹
+  const glowTex=toTex(mkCanvas(64,64,(x,w,h)=>{const gr=x.createRadialGradient(32,32,0,32,32,32);gr.addColorStop(0,'rgba(255,255,255,1)');gr.addColorStop(.25,'rgba(255,255,255,.6)');gr.addColorStop(1,'rgba(255,255,255,0)');x.fillStyle=gr;x.fillRect(0,0,w,h);}));
+  const glow=(x,y,z,c,sz)=>{const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:glowTex,color:c,transparent:true,depthWrite:false,fog:false,blending:THREE.AdditiveBlending}));sp.position.set(x,y,z);sp.scale.set(sz,sz,1);g.add(sp);return sp;};
+  const poleM=B({color:'#3a3f4a'});
+  for(const [x,z] of [[-11,Z0+2],[11,Z0+2],[-11,Z0+24],[11,Z0+24]]){const pl=box(0.18,6,0.18,poleM);pl.position.set(x,3,z);g.add(pl);glow(x,6,z,'#ffd9a0',2.6);}
+  outside.signals=[];
+  for(const [x,z,ry] of [[-10,Z0+3,0],[10,Z0+3,0],[-10,Z0+23,Math.PI],[10,Z0+23,Math.PI]]){
+    const pl=box(0.14,4.2,0.14,poleM);pl.position.set(x,2.1,z);g.add(pl);
+    const hd=box(0.9,0.32,0.3,B({color:'#1b1e24'}));hd.position.set(x,4.3,z);hd.rotation.y=ry;g.add(hd);
+    const red=glow(x+0.25*(ry?1:-1),4.3,z+(ry?-0.2:0.2),'#ff3344',0.9),grn=glow(x-0.25*(ry?1:-1),4.3,z+(ry?-0.2:0.2),'#33ff99',0.9);
+    const ped=glow(x+(x<0?1.2:-1.2),2.6,z+(ry?-0.2:0.2),'#33ff99',0.6);outside.signals.push({red,grn,ped});
+  }
+  const leafM=B({color:'#10261a'});
+  for(const [x,z] of [[-13.5,Z0+9],[-13.5,Z0+18],[13.5,Z0+8],[12.5,Z0+35],[-9,Z0+30],[9,Z0+30]]){const tr=box(0.25,2.6,0.25,B({color:'#2a1f18'}));tr.position.set(x,1.3,z);g.add(tr);
+    for(let k=0;k<3;k++){const l=new THREE.Mesh(new THREE.IcosahedronGeometry(1.2+k*0.2,0),leafM);l.position.set(x+(k-1)*0.6,3+k*0.5,z+(k%2?0.4:-0.4));g.add(l);}}
+  // 車（ゆっくり流れる）
+  const carM=[B({color:'#e9b200'}),B({color:'#c9ccd6'}),B({color:'#22262e'}),B({color:'#3d7a4f'})];
+  const mkCar=(len,col)=>{const c=new THREE.Group();const body=box(len,1.1,1.8,carM[col]);body.position.y=0.75;c.add(body);const cab=box(len*0.55,0.6,1.6,B({color:'#0e1118'}));cab.position.set(-len*0.05,1.5,0);c.add(cab);
+    c.add(Object.assign(glow(len/2,0.8,0.6,'#fff6d8',1.2),{}));c.add(glow(len/2,0.8,-0.6,'#fff6d8',1.2));c.add(glow(-len/2,0.8,0.6,'#ff2840',0.8));c.add(glow(-len/2,0.8,-0.6,'#ff2840',0.8));g.add(c);return c;};
+  [[4.2,0,8,1],[4.2,1,10.5,-1],[11,3,8,1],[4.2,2,10.5,-1],[4.2,1,8,1]].forEach(([len,col,lz,dir],k)=>{const c=mkCar(len,col);c.rotation.y=dir>0?0:Math.PI;outside.cars.push({c,z:Z0+lz+5,dir,x:-40+k*19,sp:4+(k%3)*1.5});});
+  // 通行人（シルエット）
+  const pedM=[B({color:'#07080c'}),B({color:'#0d0f15'}),B({color:'#14161e'})];
+  const R=rng(5);
+  for(let k=0;k<26;k++){const p=new THREE.Group();const b=box(0.42,1.15,0.28,pedM[k%3]);b.position.y=0.95;p.add(b);const hd=new THREE.Mesh(new THREE.SphereGeometry(0.13,8,6),pedM[k%3]);hd.position.y=1.66;p.add(hd);const lg=box(0.32,0.5,0.22,pedM[(k+1)%3]);lg.position.y=0.25;p.add(lg);
+    const path=[[-7,Z0+6,7,Z0+20],[7,Z0+6,-7,Z0+20],[-8,Z0+4,8,Z0+4],[-9.2,Z0+6,-9.2,Z0+20],[9.2,Z0+6,9.2,Z0+20],[-8,Z0+22,8,Z0+22]][k%6];
+    const u=R(),dir=R()<.5?1:-1;g.add(p);outside.peds.push({p,path,u,dir,sp:0.05+R()*0.04,off:(R()-.5)*1.6});}
+  outside.group=g;outside.dome=dome;
+  loadOutsidePhoto(Z0);
+}
+// ドアの向こう：Wikimedia Commonsの自由ライセンス写真（読み込めないときは上の3Dの街のまま）
+const OUT_PHOTO={url:'https://upload.wikimedia.org/wikipedia/commons/7/70/Shibuya_Crossing_Tokyo_At_Night_%28150285427%29.jpeg',
+  credit:'外の景色：写真 Micael Widell / CC BY 3.0（Wikimedia Commons「Shibuya Crossing Tokyo At Night」）',page:'https://commons.wikimedia.org/wiki/File:Shibuya_Crossing_Tokyo_At_Night_(150285427).jpeg',horizon:0.47};
+function loadOutsidePhoto(Z0){
+  loadImg(OUT_PHOTO.url,2048).then(img=>{
+    if(!img||!outside.group)return;
+    const c=document.createElement('canvas');c.width=img.width;c.height=img.height;const x=c.getContext('2d');
+    x.drawImage(img,0,0);
+    // 夜の店内から見る明るさに合わせて少し暗く、端をぼかす
+    x.fillStyle='rgba(5,8,20,.18)';x.fillRect(0,0,c.width,c.height);
+    const t=toTex(c);t.anisotropy=Math.min(8,MAX_ANISO);t.wrapS=THREE.RepeatWrapping;t.repeat.x=-1;t.offset.x=1;
+    const R=8,arc=2.1,W=R*arc,H=W*img.height/img.width;
+    const cyl=new THREE.Mesh(new THREE.CylinderGeometry(R,R,H,48,1,true,-arc/2,arc),new THREE.MeshBasicMaterial({map:t,side:THREE.BackSide,fog:false}));
+    cyl.position.set(0,1.6-OUT_PHOTO.horizon*H+H/2,Z0-0.4);
+    outside.group.children.forEach(o=>{if(o!==outside.dome)o.visible=false;});
+    outside.group.add(cyl);outside.photo=true;
+    const walk=plane(4,1.6,new THREE.MeshBasicMaterial({color:'#15171d',fog:false}));walk.rotation.x=-Math.PI/2;walk.position.set(0,0.004,Z0+0.8);outside.group.add(walk);
+    // クレジット（ドア横の小さなプレート）
+    const cc=mkCanvas(1024,72,(x,w,h)=>{x.fillStyle='rgba(10,12,18,.85)';x.fillRect(0,0,w,h);x.fillStyle='#cfd3dc';x.font='500 26px "Zen Kaku Gothic New",sans-serif';x.textBaseline='middle';x.fillText(OUT_PHOTO.credit,16,h/2+1);});
+    const cp=plane(1.6,0.11,new THREE.MeshBasicMaterial({map:toTex(cc),transparent:true}));cp.position.set(1.95,0.62,ROOM.z1-0.02);cp.rotation.y=Math.PI;scene.add(cp);
+    mainDirty=true;
+  });
+}
+function updateOutside(dt,now){
+  if(!outside.group||outside.photo)return;
+  // 正面を向いているときだけ動かす（軽量化）
+  const fz=-Math.cos(P.yaw);if(S.phase==='store'&&fz<0.2&&P.z<ROOM.z1-6)return;
+  for(const c of outside.cars){c.x+=c.dir*c.sp*dt;if(c.x>45)c.x=-45;if(c.x<-45)c.x=45;c.c.position.set(c.x,0,c.z);}
+  const walk=(Math.floor(now/20000)%2)===0; // 20秒ごとに歩行者用信号が切り替わる
+  for(const s of outside.signals){s.red.visible=walk;s.grn.visible=!walk;s.ped.visible=walk;}
+  for(const q of outside.peds){if(walk)q.u+=q.dir*q.sp*dt;if(q.u>1){q.u=1;q.dir=-1;}if(q.u<0){q.u=0;q.dir=1;}
+    const [x0,z0,x1,z1]=q.path,nx=-(z1-z0),nz=x1-x0,L=Math.hypot(nx,nz);q.p.position.set(x0+(x1-x0)*q.u+nx/L*q.off,0,z0+(z1-z0)*q.u+nz/L*q.off);q.p.rotation.y=Math.atan2(x1-x0,z1-z0)*(q.dir>0?1:-1);}
+  outside.t+=dt;if(outside.t>7){outside.t=0;for(const sc of outside.screens){sc.i=(sc.i+1)%3;screenFrames3(sc);}}
+}
+function screenFrames3(sc){const x=sc.c.getContext('2d');x.clearRect(0,0,512,288);OUT_FRAMES[sc.i](x,512,288);sc.t.needsUpdate=true;}
+let OUT_FRAMES=[];
 function buildStaticSigns(){
 const hoursC=signCanvas(512,640,(x,w,h)=>{
   x.fillStyle='#f3ead2';x.fillRect(0,0,w,h);
@@ -1195,12 +1356,17 @@ const memberC=signCanvas(512,320,(x,w,h)=>{
   neonMesh=plane(4.2,0.82,new THREE.MeshBasicMaterial({map:toTex(nc),transparent:true,depthWrite:false}));neonMesh.position.set(BACK_SHELF_X,2.85,ROOM.z0+0.04);scene.add(neonMesh);
   const oc=mkCanvas(256,128,(x,w,h)=>{x.font='700 76px Oswald,sans-serif';x.textAlign='center';x.textBaseline='middle';for(let b=20;b>0;b-=6){x.shadowColor='#4dd2ff';x.shadowBlur=b;x.fillStyle='#9be7ff';x.fillText('OPEN',w/2,h/2);}});
   const open=plane(0.7,0.35,new THREE.MeshBasicMaterial({map:toTex(oc),transparent:true,depthWrite:false}));open.position.set(-1.6,2.4,ROOM.z1-0.04);open.rotation.y=Math.PI;scene.add(open);
-  // 入口
-  const dc=mkCanvas(256,320,(x,w,h)=>{const g=x.createLinearGradient(0,0,0,h);g.addColorStop(0,'#0c1a35');g.addColorStop(1,'#1b2c4f');x.fillStyle=g;x.fillRect(0,0,w,h);
-    x.fillStyle='rgba(255,220,150,.8)';x.beginPath();x.arc(w*0.7,h*0.35,6,0,7);x.fill();x.fillStyle='rgba(255,220,150,.15)';x.beginPath();x.arc(w*0.7,h*0.35,30,0,7);x.fill();
-    x.strokeStyle='#8c95a8';x.lineWidth=8;x.strokeRect(4,4,w-8,h-8);x.beginPath();x.moveTo(w/2,0);x.lineTo(w/2,h);x.stroke();
-    x.fillStyle='rgba(255,255,255,.06)';x.beginPath();x.moveTo(20,h);x.lineTo(w*0.4,0);x.lineTo(w*0.5,0);x.lineTo(60,h);x.fill();});
-  const door=plane(2.0,2.4,new THREE.MeshBasicMaterial({map:toTex(dc)}));door.position.set(0,1.2,ROOM.z1-0.01);door.rotation.y=Math.PI;scene.add(door);
+  // 入口：ガラスの自動ドア（向こうに夜のスクランブル交差点）
+  {
+    const frameM=lam('#8c95a8');
+    const fr=(w,h,x,y)=>{const b=box(w,h,0.06,frameM);b.position.set(x,y,ROOM.z1-0.02);scene.add(b);};
+    fr(2.08,0.08,0,2.42);fr(0.06,2.44,-1.02,1.2);fr(0.06,2.44,1.02,1.2);fr(0.04,2.36,0,1.18);
+    const glassM=new THREE.MeshBasicMaterial({color:'#9fc4ff',transparent:true,opacity:0.07,depthWrite:false});
+    for(const x of [-0.5,0.5]){const g=plane(0.98,2.36,glassM);g.position.set(x,1.19,ROOM.z1-0.025);g.rotation.y=Math.PI;scene.add(g);}
+    const st=mkCanvas(256,96,(x,w,h)=>{x.fillStyle='rgba(255,255,255,.88)';x.fillRect(0,0,w,h);x.fillStyle='#1d3557';x.textAlign='center';x.textBaseline='middle';x.font='900 40px "Zen Kaku Gothic New",sans-serif';x.fillText('自動ドア',w/2,h/2+2);});
+    for(const x of [-0.5,0.5]){const d=plane(0.32,0.12,new THREE.MeshBasicMaterial({map:toTex(st),transparent:true}));d.position.set(x,1.25,ROOM.z1-0.03);d.rotation.y=Math.PI;scene.add(d);}
+    buildOutside();
+  }
   const mat=plane(1.8,0.9,lam('#2b2f3d'));mat.rotation.x=-Math.PI/2;mat.position.set(0,0.006,ROOM.z1-0.6);scene.add(mat);
 }
 
@@ -2875,7 +3041,7 @@ function frame(now){
   if(S.phase==='start'){patrolStep(dt);mainDirty=true;}
   else if(!pv){moveStep(dt);mainDirty=true;}
   camera.position.set(P.x,1.6,P.z);camera.rotation.set(P.pitch,P.yaw,0);camera.updateMatrixWorld();
-  updateGate(dt,now);
+  updateGate(dt,now);updateOutside(dt,now);
   pumpSpines(S.phase==='start'?8:5);flushAtlases(now);pumpTiny(now);
   {const off=(now%9000)<450&&Math.random()<0.5;flickerMat.color.set(off?'#3b4048':'#eef6f0');flickerLight.intensity=off?0:0.7;}
   if(marker.visible){marker.position.copy(markerBase);marker.position.y+=Math.sin(now/200)*0.04;marker.rotation.y=now/500;if(now>markerUntil)marker.visible=false;mainDirty=true;}

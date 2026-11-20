@@ -11,3 +11,6 @@
 
 ## 画像について
 ジャケット画像はこのリポジトリには含まれていません。表示するときに各サービスの画像サーバーから読み込みます。著作権は各権利者に帰属します。
+
+## 写真のクレジット
+入口の外の景色: "Shibuya Crossing Tokyo At Night" 撮影 Micael Widell（[Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Shibuya_Crossing_Tokyo_At_Night_(150285427).jpeg)）、[CC BY 3.0](https://creativecommons.org/licenses/by/3.0/)。表示時に明るさを少し暗くしています。画像はこのリポジトリには含まれず、表示するときに Wikimedia から読み込みます。
